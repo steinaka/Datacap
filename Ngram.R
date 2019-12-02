@@ -126,3 +126,121 @@ freq6 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = hexagram, 
 save(freq6, file="nfreq.f6.RData")
 nf <- list("f1" = freq1, "f2" = freq2, "f3" = freq3, "f4" = freq4, "f5" = freq5, "f6" = freq6)
 save(nf, file="nfreq.v5.RData")
+
+
+
+Appendix A - Basic Information of the Data
+# Preload necessary R librabires
+library(knitr); library(dplyr); library(doParallel); library(tm); library(SnowballC)
+library(stringi); library(tm); library(ggplot2); library(wordcloud)
+
+path1 <- "./data/en_US.blogs.txt"
+path2 <- "./data/en_US.news.txt"
+path3 <- "./data/en_US.twitter.txt"
+
+# Read blogs data in binary mode
+conn <- file(path1, open="rb")
+blogs <- readLines(conn, encoding="UTF-8"); close(conn)
+# Read news data in binary mode
+conn <- file(path2, open="rb")
+news <- readLines(conn, encoding="UTF-8"); close(conn)
+# Read twitter data in binary mode
+conn <- file(path3, open="rb")
+twitter <- readLines(conn, encoding="UTF-8"); close(conn)
+# Remove temporary variable
+rm(conn)
+
+# Compute statistics and summary info for each data type
+WPL <- sapply(list(blogs,news,twitter),function(x) summary(stri_count_words(x))[c('Min.','Mean','Max.')])
+rownames(WPL) <- c('WPL_Min','WPL_Mean','WPL_Max')
+stats <- data.frame(
+  FileName=c("en_US.blogs","en_US.news","en_US.twitter"),      
+  t(rbind(
+    sapply(list(blogs,news,twitter),stri_stats_general)[c('Lines','Chars'),],
+    Words=sapply(list(blogs,news,twitter),stri_stats_latex)['Words',],
+    WPL)
+  ))
+head(stats)
+Appendix B - Sample and Clean the Data
+# Set random seed for reproducibility and sample the data
+set.seed(1001)
+sampleBlogs <- blogs[sample(1:length(blogs), 0.01*length(blogs), replace=FALSE)]
+sampleNews <- news[sample(1:length(news), 0.01*length(news), replace=FALSE)]
+sampleTwitter <- twitter[sample(1:length(twitter), 0.01*length(twitter), replace=FALSE)]
+
+# Remove unconvention/funny characters for sampled Blogs/News/Twitter
+sampleBlogs <- iconv(sampleBlogs, "UTF-8", "ASCII", sub="")
+sampleNews <- iconv(sampleNews, "UTF-8", "ASCII", sub="")
+sampleTwitter <- iconv(sampleTwitter, "UTF-8", "ASCII", sub="")
+sampleData <- c(sampleBlogs,sampleNews,sampleTwitter)
+
+# Remove temporary variables
+rm(blogs, news, twitter, path1, path2, path3)
+Appendix C - Build Corpus
+build_corpus <- function (x = sampleData) {
+  sample_c <- VCorpus(VectorSource(x)) # Create corpus dataset
+  sample_c <- tm_map(sample_c, tolower) # all lowercase
+  sample_c <- tm_map(sample_c, removePunctuation) # Eleminate punctuation
+  sample_c <- tm_map(sample_c, removeNumbers) # Eliminate numbers
+  sample_c <- tm_map(sample_c, stripWhitespace) # Strip Whitespace
+  
+  # read and process a file of banned words
+  bw <- read.csv(file ='Terms-to-Block.csv', stringsAsFactors=F, skip=3)
+  bannedWords <- gsub(",", "", tolower(bw[,2]))
+  sample_c <- tm_map(sample_c, removeWords, bannedWords) # Eliminate banned words
+  sample_c <- tm_map(sample_c, removeWords, stopwords("english")) # Eliminate English stop words
+  sample_c <- tm_map(sample_c, stemDocument) # Stem the document
+  sample_c <- tm_map(sample_c, PlainTextDocument) # Create plain text format
+}
+corpusData <- build_corpus(sampleData)
+Appendix D - Tokenize and Calculate Frequencies of N-Grams
+library(RWeka)
+
+getTermTable <- function(corpusData, ngrams = 1, lowfreq = 50) {
+  #create term-document matrix tokenized on n-grams
+  tokenizer <- function(x) { NGramTokenizer(x, Weka_control(min = ngrams, max = ngrams)) }
+  tdm <- TermDocumentMatrix(corpusData, control = list(tokenize = tokenizer))
+  #find the top term grams with a minimum of occurrence in the corpus
+  top_terms <- findFreqTerms(tdm,lowfreq)
+  top_terms_freq <- rowSums(as.matrix(tdm[top_terms,]))
+  top_terms_freq <- data.frame(word = names(top_terms_freq), frequency = top_terms_freq)
+  top_terms_freq <- arrange(top_terms_freq, desc(frequency))
+}
+
+tt.Data <- list(3)
+for (i in 1:3) {
+  tt.Data[[i]] <- getTermTable(corpusData, ngrams = i, lowfreq = 10)
+}
+Appendix E - Code for Plot of Sampled Corpus with Word Cloud
+library(wordcloud)
+library(RColorBrewer)
+
+# Set random seed for reproducibility
+set.seed(1001)
+# Set Plotting in 1 row 3 columns
+par(mfrow=c(1, 3))
+for (i in 1:3) {
+  wordcloud(tt.Data[[i]]$word, tt.Data[[i]]$frequency, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+}
+Appendix F - Make Plots
+plot.Grams <- function (x = tt.Data, N=10) {
+  g1 <- ggplot(data = head(x[[1]],N), aes(x = reorder(word, -frequency), y = frequency)) + 
+    geom_bar(stat = "identity", fill = "green") + 
+    ggtitle(paste("Unigrams")) + 
+    xlab("Unigrams") + ylab("Frequency") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  g2 <- ggplot(data = head(x[[2]],N), aes(x = reorder(word, -frequency), y = frequency)) + 
+    geom_bar(stat = "identity", fill = "blue") + 
+    ggtitle(paste("Bigrams")) + 
+    xlab("Bigrams") + ylab("Frequency") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  g3 <- ggplot(data = head(x[[3]],N), aes(x = reorder(word, -frequency), y = frequency)) + 
+    geom_bar(stat = "identity", fill = "darkgreen") + 
+    ggtitle(paste("Trigrams")) + 
+    xlab("Trigrams") + ylab("Frequency") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  # Put three plots into 1 row 3 columns
+  gridExtra::grid.arrange(g1, g2, g3, ncol = 3)
+}
+library(ggplot2); library(gridExtra)
+plot.Grams(x = tt.Data, N = 20)
