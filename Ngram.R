@@ -1,5 +1,7 @@
+# Preload necessary R libary
+
 library(rJava)
-rlibrary(knitr)
+library(knitr)
 library(RColorBrewer)
 library(stringi)
 library(wordcloud2)
@@ -13,54 +15,52 @@ library(xtable)
 library(downloader)
 library(plyr)
 library(dplyr)
-library(knitr)
-library(tm)
-library(stringi)
-library(RWeka)
-library(ggplot2)
-library(slam)
+library(doParallel)
+library(SnowballC)
+library(wordcloud)
+
 
 options(mc.cores=1)
 
 ## Step 1: Download the dataset and unzip folder
 ## Check if directory already exists?
-if(!file.exists("./projectData")){
-  dir.create("./projectData")
+if(!file.exists("./final")){
+  dir.create("./final")
 }
 Url <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
 ## Check if zip has already been downloaded in projectData directory?
-if(!file.exists("./projectData/Coursera-SwiftKey.zip")){
-  download.file(Url,destfile="./projectData/Coursera-SwiftKey.zip",mode = "wb")
+if(!file.exists("./final/Coursera-SwiftKey.zip")){
+  download.file(Url,destfile="./final/Coursera-SwiftKey.zip",mode = "wb")
 }
 ## Check if zip has already been unzipped?
-if(!file.exists("./projectData/final")){
-  unzip(zipfile="./projectData/Coursera-SwiftKey.zip",exdir="./projectData")
+if(file.exists("./final")){
+  unzip(zipfile="./final/Coursera-SwiftKey.zip",exdir=".")
 }
 # Once the dataset is downloaded start reading it as this a huge dataset so we'll read line by line only the amount of data needed before doing that lets first list all the files in the directory
-path <- file.path("./projectData/final" , "en_US")
+path <- file.path("./final" , "en_US")
 files<-list.files(path, recursive=TRUE)
 # Lets make a file connection of the twitter data set
-con <- file("./projectData/final/en_US/en_US.twitter.txt", "r") 
+con <- file("./final/en_US/en_US.twitter.txt", "r") 
 #lineTwitter<-readLines(con,encoding = "UTF-8", skipNul = TRUE)
 lineTwitter<-readLines(con, skipNul = TRUE)
 # Close the connection handle when you are done
 close(con)
 # Lets make a file connection of the blog data set
-con <- file("./projectData/final/en_US/en_US.blogs.txt", "r") 
+con <- file("./final/en_US/en_US.blogs.txt", "r") 
 #lineBlogs<-readLines(con,encoding = "UTF-8", skipNul = TRUE)
 lineBlogs<-readLines(con, skipNul = TRUE)
 # Close the connection handle when you are done
 close(con)
 # Lets make a file connection of the news data set
-con <- file("./projectData/final/en_US/en_US.news.txt", "r") 
+con <- file("./final/en_US/en_US.news.txt", "r") 
 #lineNews<-readLines(con,encoding = "UTF-8", skipNul = TRUE)
 lineNews<-readLines(con, skipNul = TRUE)
 # Close the connection handle when you are done
 close(con)
 # Get file sizes
-lineBlogs.size <- file.info("./projectData/final/en_US/en_US.blogs.txt")$size / 1024 ^ 2
-lineNews.size <- file.info("./projectData/final/en_US/en_US.news.txt")$size / 1024 ^ 2
-lineTwitter.size <- file.info("./projectData/final/en_US/en_US.twitter.txt")$size / 1024 ^ 2
+lineBlogs.size <- file.info("./final/en_US/en_US.blogs.txt")$size / 1024 ^ 2
+lineNews.size <- file.info("./final/en_US/en_US.news.txt")$size / 1024 ^ 2
+lineTwitter.size <- file.info("./final/en_US/en_US.twitter.txt")$size / 1024 ^ 2
 
 # Get words in files
 lineBlogs.words <- stri_count_words(lineBlogs)
@@ -74,7 +74,29 @@ data.frame(source = c("blogs", "news", "twitter"),
            num.words = c(sum(lineBlogs.words), sum(lineNews.words), sum(lineTwitter.words)),
            mean.num.words = c(mean(lineBlogs.words), mean(lineNews.words), mean(lineTwitter.words)))
 ## Cleaning The Data
-# Sample the data
+
+
+##------
+## Display Statistics of data
+
+
+WPL <- sapply(list(lineBlogs,lineNews,lineTwitter),function(x) summary(stri_count_words(x))[c('Min.','Mean','Max.')])
+rownames(WPL) <- c('WPL_Min','WPL_Mean','WPL_Max')
+stats <- data.frame(
+  FileName=c("en_US.blogs","en_US.news","en_US.twitter"),      
+  t(rbind(
+    sapply(list(lineBlogs,lineNews,lineTwitter),stri_stats_general)[c('Lines','Chars'),],
+    Words=sapply(list(lineBlogs,lineNews,lineTwitter),stri_stats_latex)['Words',],
+    WPL)
+  ))
+
+head(stats)
+
+
+##-----------
+
+
+# Sample the data and set seed for reporducibility
 set.seed(5000)
 data.sample <- c(sample(lineBlogs, length(lineBlogs) * 0.02),
                  sample(lineNews, length(lineNews) * 0.02),
@@ -110,29 +132,58 @@ trigram <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
 quadgram <- function(x) NGramTokenizer(x, Weka_control(min = 4, max = 4))
 pentagram <- function(x) NGramTokenizer(x, Weka_control(min = 5, max = 5))
 hexagram <- function(x) NGramTokenizer(x, Weka_control(min = 6, max = 6))
+heptagram <- function(x) NGramTokenizer(x, Weka_control(min = 7, max = 7))
 
 # Get frequencies of most common n-grams in data sample
-freq1 <- getFreq(removeSparseTerms(TermDocumentMatrix(unicorpus), 0.999))
-save(freq1, file="nfreq.f1.RData")
-freq2 <- getFreq(TermDocumentMatrix(unicorpus, control = list(tokenize = bigram, bounds = list(global = c(5, Inf)))))
-save(freq2, file="nfreq.f2.RData")
-freq3 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = trigram, bounds = list(global = c(3, Inf)))))
-save(freq3, file="nfreq.f3.RData")
-freq4 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = quadgram, bounds = list(global = c(2, Inf)))))
-save(freq4, file="nfreq.f4.RData")
-freq5 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = pentagram, bounds = list(global = c(2, Inf)))))
-save(freq5, file="nfreq.f5.RData")
-freq6 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = hexagram, bounds = list(global = c(2, Inf)))))
-save(freq6, file="nfreq.f6.RData")
-nf <- list("f1" = freq1, "f2" = freq2, "f3" = freq3, "f4" = freq4, "f5" = freq5, "f6" = freq6)
+# freq1 <- getFreq(removeSparseTerms(TermDocumentMatrix(unicorpus), 0.999))
+# save(freq1, file="nfreq.f1.RData")
+# freq2 <- getFreq(TermDocumentMatrix(unicorpus, control = list(tokenize = bigram, bounds = list(global = c(5, Inf)))))
+# save(freq2, file="nfreq.f2.RData")
+# freq3 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = trigram, bounds = list(global = c(3, Inf)))))
+# save(freq3, file="nfreq.f3.RData")
+# freq4 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = quadgram, bounds = list(global = c(2, Inf)))))
+# save(freq4, file="nfreq.f4.RData")
+# freq5 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = pentagram, bounds = list(global = c(2, Inf)))))
+# save(freq5, file="nfreq.f5.RData")
+# freq6 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = hexagram, bounds = list(global = c(2, Inf)))))
+# save(freq6, file="nfreq.f6.RData")
+
+freq7 <- getFreq(TermDocumentMatrix(corpus, control = list(tokenize = heptagram, bounds = list(global = c(2, Inf)))))
+save(freq7, file="nfreq.f7.RData")
+
+
+nf <- list("f1" = freq1, "f2" = freq2, "f3" = freq3, "f4" = freq4, "f5" = freq5, "f6" = freq6, "f7" = freq7 )
 save(nf, file="nfreq.v5.RData")
 
+##------
+## Word cloud display
 
 
-Appendix A - Basic Information of the Data
-# Preload necessary R librabires
-library(knitr); library(dplyr); library(doParallel); library(tm); library(SnowballC)
-library(stringi); library(tm); library(ggplot2); library(wordcloud)
+
+
+wordcloud(freq1$word, freq1$freq, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+wordcloud(freq2$word, freq2$freq, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+wordcloud(freq3$word, freq3$freq, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+wordcloud(freq4$word, freq4$freq, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+wordcloud(freq5$word, freq5$freq, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+wordcloud(freq6$word, freq6$freq, scale = c(3,1), max.words=100, random.order=FALSE, rot.per=0, fixed.asp = TRUE, use.r.layout = FALSE, colors=brewer.pal(8, "Dark2"))
+
+
+
+##-----------
+
+
+
+
+
+
+
+
+
+
+
+
+##-------------------
 
 path1 <- "./data/en_US.blogs.txt"
 path2 <- "./data/en_US.news.txt"

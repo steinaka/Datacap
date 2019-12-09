@@ -1,0 +1,78 @@
+Kai Coursera Capstone
+========================================================
+author: KX
+date: 2019 December
+autosize: true
+
+Unlocking the power of predictive text
+========================================================
+
+Kai Predictive Text unlock predictive text! 
+
+There are 3 parts:
+
+- Model
+- Predictive Algorithm
+- Shiny Application
+
+Model
+========================================================
+
+15% of supplied twitter, news & blog data are sampled and tokenized them resulting in >1.4M English tokenized sentences.
+
+These were used as input for the n-gram tokenizer. For accuracy we've generated all 1-grams until 7-grams (as far as possible) of these sentences and generated frequency tables for each unique gram.
+
+These area stored using a lookup part (first n-1 tokens), the so called datum and the suggest part (the n-th gram)
+
+For speed reasons we only kept tokens with frequency > 1 and only the unique lookups, so only 1 suggestion for each lookup combination exists.
+
+The resulting n-grams:
+
+The model was done on several variations with removing of adult content done at different portions of the model as some chaacters eres still coming in.
+``
+
+Model
+========================================================
+
+Finding out that the model does not cleanly filter out adult words, we have utilized TM packages and run through a double filter to clean out adult words. 5 variants of data samples were done to ascertain how different techniques applied at different stages of the model provided almost entirely different results and effectivness of filtering out negative words. 
+
+Please do not mind the words...
+
+
+
+Predictive Algorithm
+========================================================
+
+Queries submitted are preprocessed and tokenized resulting in any number of grams.
+
+Starting from the last 7 (or less) grams of the query the [Stupid Backoff](http://www.aclweb.org/anthology/D07-1090.pdf) algorithm is recursivly applied
+
+$$
+S ( w_i|w_{i-1}^{i-k+1} ) =  
+\left\{
+  \begin{array}{ll}
+    \frac{f(w_{i-k+1}^i )}{f(w_{i-k+1}^{i-1} )} \qquad \, \textrm{if} \, f(w_{i-k+1}^i ) >0\\
+    \alpha S(w_{i-k+1}^i ) \quad \textrm{otherwise}
+  \end{array}
+\right.
+$$
+
+We use $S$ to denote that these are scores, not probabilities.
+
+$f(·)$ are the pre-computed and stored relative frequencies and $\alpha$ is the fixed back-off value, heuristicly initialized at $0.4$ 
+
+We aggregate all matching grams and sort them by their scores descending.
+
+
+Shiny Application
+========================================================
+
+Finally the condensed lookuptables and prediction algorithm are stored and made available in a shiny app.
+
+The app uses twitter's typeahead plugin to really experience the autocomplete & suggestion possibilities of the combined model & algorithm. 
+
+While you are typing the algorithm tries to partially lookup the string aleady and makes suggestions as you type. The combination of the reaktive nature and speed of the condensed algorithm & model truely highten the user experience.
+
+UI: Use up/down arrow keys & enter to select a suggestion or the right arrow key to tigger the autocomplete.
+
+Check it out yourself at: [https://steinaka.shinyapps.io/dataproduct/]()
